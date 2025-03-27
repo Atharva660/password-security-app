@@ -1,0 +1,15 @@
+import axios from 'axios';
+
+// Ensure process is defined for browser environments
+if (typeof window !== 'undefined' && typeof window.process === 'undefined') {
+  window.process = {
+    env: {
+      NODE_ENV: process.env.NODE_ENV || 'development'
+    }
+  };
+}
+
+// Use XMLHttpRequest adapter for browser
+axios.defaults.adapter = require('axios/lib/adapters/xhr');
+
+export default axios;
