@@ -1,26 +1,36 @@
-import { db } from "../firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { db, auth } from "../firebase";
+import { 
+  doc, 
+  setDoc, 
+  getDoc,
+  collection,
+  addDoc,
+  query,
+  getDocs,
+  deleteDoc
+} from "firebase/firestore";
 import crypto from "crypto";
 import { config } from "dotenv";
-import { SECRET_KEY_BUFFER } from './secretKeyUtils';
 
 config();
 
-// Check if SECRET_KEY_BUFFER is available
-if (!SECRET_KEY_BUFFER) {
-  console.error('Secret key is not available');
+// Encryption Key Configuration
+const SECRET_KEY = process.env.REACT_APP_SECRET_KEY;
+if (!SECRET_KEY) {
+  console.error('Encryption key is not configured');
 }
+const SECRET_KEY_BUFFER = Buffer.from(SECRET_KEY, 'hex');
 
 // AES-256 Encryption
-const encryptPassword = (password) => {
+export const encryptPassword = (password) => {
   if (!SECRET_KEY_BUFFER) {
     console.error('Secret key is not available for encryption');
     return null;
   }
 
   try {
-    const IV_LENGTH = 16;  // AES IV length (128-bit)
-    const iv = crypto.randomBytes(IV_LENGTH);  // Generate random IV
+    const IV_LENGTH = 16;
+    const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv("aes-256-cbc", SECRET_KEY_BUFFER, iv);
     let encrypted = cipher.update(password, "utf8", "hex");
     encrypted += cipher.final("hex");
@@ -32,14 +42,18 @@ const encryptPassword = (password) => {
 };
 
 // AES-256 Decryption
-const decryptPassword = (encryptedData, iv) => {
+export const decryptPassword = (encryptedData, iv) => {
   if (!SECRET_KEY_BUFFER) {
     console.error('Secret key is not available for decryption');
     return null;
   }
 
   try {
-    const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY_BUFFER, Buffer.from(iv, "hex"));
+    const decipher = crypto.createDecipheriv(
+      "aes-256-cbc", 
+      SECRET_KEY_BUFFER, 
+      Buffer.from(iv, "hex")
+    );
     let decrypted = decipher.update(encryptedData, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -49,57 +63,89 @@ const decryptPassword = (encryptedData, iv) => {
   }
 };
 
-// Save encrypted password in Firestore
-export const savePasswordToDB = async (password) => {
-  if (!password) {
-    console.error('Password is empty');
-    return;
-  }
+// Save password to Firestore
+export const savePasswordToDB = async (passwordData) => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("User not authenticated");
 
-  const { encryptedData, iv } = encryptPassword(password);
-
-  if (!encryptedData || !iv) {
-    console.error('Failed to encrypt password');
-    return;
-  }
-
-  // Log data before saving to Firestore
-  console.log("Saving encrypted password to DB:", encryptedData, iv);
+  const { encryptedData, iv } = encryptPassword(passwordData.password);
+  if (!encryptedData || !iv) throw new Error("Encryption failed");
 
   try {
-    const userId = "testUser";  // Replace with actual user ID
-    await setDoc(doc(db, "securePasswords", userId), {
+    const passwordsRef = collection(db, "users", user.email, "passwords");
+    await addDoc(passwordsRef, {
+      title: passwordData.title,
+      username: passwordData.username,
       encryptedPassword: encryptedData,
-      iv: iv
+      iv: iv,
+      notes: passwordData.notes,
+      category: passwordData.category,
+      createdAt: new Date().toISOString(),
+      lastUpdated: new Date().toISOString()
     });
-    console.log("Password saved successfully!");
+    return true;
   } catch (error) {
-    console.error('Error saving password to Firestore:', error);
+    console.error('Error saving password:', error);
+    throw error;
   }
 };
 
-// Get encrypted password from Firestore
-export const getPasswordFromDB = async (userId) => {
+// Get all passwords for current user
+export const getUserPasswords = async () => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("User not authenticated");
+
   try {
-    const docRef = doc(db, "securePasswords", userId);
+    const q = query(collection(db, "users", user.email, "passwords"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      password: "" // Don't decrypt automatically
+    }));
+  } catch (error) {
+    console.error('Error getting passwords:', error);
+    throw error;
+  }
+};
+
+// Get and decrypt a specific password
+export const getPasswordFromDB = async (passwordId) => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("User not authenticated");
+
+  try {
+    const docRef = doc(db, "users", user.email, "passwords", passwordId);
     const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const { encryptedPassword, iv } = data;
+    if (!docSnap.exists()) throw new Error("Password not found");
 
-      const decryptedPassword = decryptPassword(encryptedPassword, iv);
-      if (!decryptedPassword) {
-        console.error('Failed to decrypt password');
-        return null;
-      }
+    const data = docSnap.data();
+    const decrypted = decryptPassword(data.encryptedPassword, data.iv);
+    if (!decrypted) throw new Error("Decryption failed");
 
-      return decryptedPassword;  // Returns the decrypted password
-    } else {
-      throw new Error("Password not found for user");
-    }
+    return {
+      id: docSnap.id,
+      ...data,
+      password: decrypted
+    };
   } catch (error) {
-    console.error('Error retrieving password from Firestore:', error);
-    return null;
+    console.error('Error retrieving password:', error);
+    throw error;
+  }
+};
+
+// Delete a password
+export const deletePasswordFromDB = async (passwordId) => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error("User not authenticated");
+
+  try {
+    const docRef = doc(db, "users", user.email, "passwords", passwordId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting password:', error);
+    throw error;
   }
 };
