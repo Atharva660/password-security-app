@@ -2,7 +2,8 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, collection, doc, setDoc, getDoc } from "firebase/firestore";
+
 
 // Firebase configuration (import from .env file or replace manually)
 const firebaseConfig = {
@@ -22,4 +23,4 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-export { auth, db };
+export { db, auth, collection, doc, setDoc, getDoc };

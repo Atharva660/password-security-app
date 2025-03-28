@@ -1,25 +1,50 @@
 import React, { useState } from "react";
 import { generateDevnagriPassword } from "../utils/passwordGenerator";
-import { savePasswordToDB } from "../utils/passwordUtils";
+import { savePasswordToDB, getPasswordFromDB } from "../utils/passwordUtils";
+import { useNavigate } from "react-router-dom";
 import { convertToDevnagri } from "../utils/devnagriEncoder";
 
 const DevanagriPasswordSuggester = () => {
     const [passwords, setPasswords] = useState([]);
     const [selectedPassword, setSelectedPassword] = useState("");
+    const [retrievedPassword, setRetrievedPassword] = useState("");  // 🔥 New: Store retrieved password
+    const navigate = useNavigate();
 
+    // Generate password suggestions
     const handleSuggestPasswords = () => {
         const generatedPasswords = Array.from({ length: 5 }, generateDevnagriPassword);
         setPasswords(generatedPasswords);
     };
 
+    // Save selected password securely
     const handleSavePassword = async () => {
         if (!selectedPassword) {
             alert("Please select a password!");
             return;
         }
 
-        await savePasswordToDB(selectedPassword);
-        alert("✅ Password securely stored in the database!");
+        try {
+            await savePasswordToDB(selectedPassword);
+            alert("✅ Password securely stored in the database!");
+        } catch (error) {
+            console.error("Error saving password:", error);
+            alert("❌ Failed to save password!");
+        }
+    };
+
+    // Retrieve password from database
+    const handleRetrievePassword = async () => {
+        try {
+            const storedPassword = await getPasswordFromDB("testUser"); // Ensure you're passing the correct userId
+            if (storedPassword) {
+                setRetrievedPassword(storedPassword);
+            } else {
+                alert("❌ No saved password found!");
+            }
+        } catch (error) {
+            console.error("Error retrieving password:", error);
+            alert("❌ Failed to retrieve password!");
+        }
     };
 
     return (
@@ -50,8 +75,22 @@ const DevanagriPasswordSuggester = () => {
                     <button onClick={handleSavePassword} className="bg-purple-500 text-white px-4 py-2 rounded mt-2">
                         Save Securely
                     </button>
+                    <button onClick={() => navigate("/store")} className="bg-purple-500 text-white px-4 py-2 rounded mt-2">
+                        Verify
+                    </button>
                 </div>
             )}
+
+            {/* 🔥 New: Retrieve & Display Password Section */}
+            <div className="mt-4">
+                <button onClick={handleRetrievePassword} className="bg-yellow-500 text-white px-4 py-2 rounded mt-2">
+                    Retrieve Saved Password
+                </button>
+
+                {retrievedPassword && (
+                    <p className="font-semibold mt-2">🔓 Retrieved Password: {retrievedPassword}</p>
+                )}
+            </div>
         </div>
     );
 };
